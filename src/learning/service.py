@@ -262,6 +262,11 @@ class LearningService:
                 raise ValueError("视频已被替换，请重新导入后再播放，避免引用错位")
         return path
 
+    def forget(self, video_id: str) -> dict:
+        """Drop a video from the library; never touches user files on disk."""
+        self.store.video(video_id)
+        return self.store.delete_video(video_id)
+
     def progress(self, video_id: str, value: dict):
         video = self.store.video(video_id)
         previous = self.store.progress(video_id)

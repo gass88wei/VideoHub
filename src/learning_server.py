@@ -142,6 +142,12 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     def video(video_id):
         return jsonify(service.detail(video_id))
 
+    @app.delete("/api/learning/videos/<video_id>")
+    def forget_video(video_id):
+        # Library record only: original media, subtitles and project files stay.
+        service.forget(video_id)
+        return jsonify(ok=True)
+
     @app.get("/api/learning/videos/<video_id>/media")
     def video_media(video_id):
         path = service.media_path(video_id)

@@ -171,3 +171,20 @@ class Store:
         with self.connect() as db:
             rows = db.execute("SELECT data FROM jobs ORDER BY rowid DESC").fetchall()
         return [item for row in rows if (item := json.loads(row[0]))["video_id"] == video_id][:30]
+
+    def delete_video(self, video_id: str) -> dict:
+        """Remove a video from the learning library. Only library records are
+        dropped; the original media, subtitles and project files stay on disk."""
+        video = self.video(video_id)
+        with self.connect() as db:
+            for row in db.execute("SELECT id,data FROM jobs").fetchall():
+                job = json.loads(row["data"])
+                if job.get("video_id") == video_id:
+                    db.execute("DELETE FROM jobs WHERE id=?", (row["id"],))
+            db.execute("DELETE FROM messages WHERE video_id=?", (video_id,))
+            db.execute("DELETE FROM notes WHERE video_id=?", (video_id,))
+            db.execute("DELETE FROM progress WHERE video_id=?", (video_id,))
+            db.execute("DELETE FROM tracks WHERE video_id=?", (video_id,))
+            if not db.execute("DELETE FROM videos WHERE id=?", (video_id,)).rowcount:
+                raise KeyError("视频未登记")
+        return video

@@ -45,8 +45,7 @@ export function resolveSearchQuery(question: string, explicit: string): string {
   if (Array.from(query).length > 128) throw new Error('联网检索词不能超过128字');
   return query || Array.from(question.trim().replace(/\s+/g, ' ')).slice(0, 128).join('');
 }
-export async function sendChat(videoId: string, options: ChatRequest): Promise<Job> {
-  const question = options.question.trim();
+export async function sendChat(videoId: string, options: ChatRequest): Promise<Job> {  const question = options.question.trim();
   if (!question) throw new Error('请输入问题后再发送');
   const search_query = options.search ? resolveSearchQuery(question, options.search_query) : '';
   // Send a bounded, visible query to search; never derive it from video text or notes.

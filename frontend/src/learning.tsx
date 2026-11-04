@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BookOpen, FolderPlus, Play, Search, Subtitles, X, Repeat, Crosshair, Maximize, Minimize, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { BookOpen, FolderPlus, Play, Search, Subtitles, X, Repeat, Crosshair, Maximize, Minimize, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Trash2 } from 'lucide-react';
 import './learning.css';
 import { api, setToken, time, currentCue, defaultSubtitleStyle, SubtitleStyle, Mode, Progress, Cue, Video, Providers } from './learning-api';
 import { LearningPanel } from './learning-panel';
@@ -264,8 +264,14 @@ function App() {
     {error && <div className="error" role="alert">{error}<button aria-label="关闭错误" onClick={() => setError('')}><X size={16} /></button></div>}
     <main style={{ '--preferred-library-width': sizes.library + 'px', '--preferred-assistant-width': sizes.assistant + 'px' } as React.CSSProperties} className={'workspace' + (collapsed.library ? ' library-collapsed' : '') + (collapsed.assistant ? ' assistant-collapsed' : '')}><aside className="library" id="learning-library" hidden={collapsed.library}><div className="eyebrow">我的学习资料</div>
       {!!library.length && <input className="library-search" aria-label="搜索学习资料" placeholder="搜索资料" value={libraryQuery} onChange={e => setLibraryQuery(e.target.value)}/>}
-      {library.filter(v => v.title.toLowerCase().includes(libraryQuery.toLowerCase())).map(item => <button key={item.id} className={'library-item ' + (video?.id === item.id ? 'selected' : '')} title={item.title + '\n' + time(item.progress.time) + ' / ' + time(item.duration)} aria-label={item.title + '，' + time(item.progress.time) + ' / ' + time(item.duration)}
-        onClick={() => void execute(async () => { await save(); await open(item.id); await refresh(); })}><Play size={14} /><span className="library-title">{item.title}</span><progress aria-label="学习进度" max={item.duration} value={item.progress.time}/></button>)}
+      {library.filter(v => v.title.toLowerCase().includes(libraryQuery.toLowerCase())).map(item => <div key={item.id} className={'library-row' + (video?.id === item.id ? ' selected' : '')}><button className={'library-item ' + (video?.id === item.id ? 'selected' : '')} title={item.title + '\n' + time(item.progress.time) + ' / ' + time(item.duration)} aria-label={item.title + '，' + time(item.progress.time) + ' / ' + time(item.duration)}
+        onClick={() => void execute(async () => { await save(); await open(item.id); await refresh(); })}><Play size={14} /><span className="library-title">{item.title}</span><progress aria-label="学习进度" max={item.duration} value={item.progress.time}/></button>
+        <button className="library-remove" aria-label={'从学习资料移除 ' + item.title} title="从学习资料移除（不删除磁盘文件）" onClick={() => void execute(async () => {
+          if (!window.confirm('从学习资料移除「' + item.title + '」？\n\n只移除学习记录（字幕、笔记、对话、进度），磁盘上的视频和字幕文件不会删除。')) return;
+          await api('/videos/' + item.id, 'DELETE');
+          if (video?.id === item.id) { setVideo(null); setPosition(0); setSelected(null); setLoop(null); localStorage.removeItem('videohub.learning.last'); history.replaceState(null, '', '/learn'); }
+          await refresh();
+        })}><Trash2 size={13}/></button></div>)}
       {!library.length && <p className="muted">导入一个视频，开始学习。</p>}
       <ResizeHandle label="调整资料库宽度" controls="learning-library" className="library-width-resizer" axis="x" value={sizes.library} min={160} max={sizes.libraryMax} change={value => sizes.change('library', value)} reset={() => sizes.reset('library')}/></aside>
       <section className="lesson" ref={lesson}>{video ? <>
