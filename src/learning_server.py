@@ -117,6 +117,19 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     def scan_directory():
         return jsonify(videos=directory_assets(str(body().get("path", ""))))
 
+    @app.post("/api/learning/pick-directory")
+    def pick_directory():
+        """Open the desktop's native folder chooser and return the picked path.
+
+        A browser page cannot read a dropped folder's absolute path, and typing
+        paths by hand is the main friction in importing a project. The dialog
+        runs on the machine hosting the server, which is always the same machine
+        because the app binds to 127.0.0.1 only.
+        """
+        from .learning.dialog import pick_directory as choose
+
+        return jsonify(path=choose(str(body().get("path", ""))))
+
     @app.post("/api/learning/imports/project")
     def project_import():
         data = body()
