@@ -129,6 +129,23 @@ function App() {
     void api('/videos/' + pending.id + '/progress', 'PUT', pending.progress).catch(() => {});
   }, []);
   const seek = useCallback((seconds: number) => { if (player.current) player.current.currentTime = seconds; setPosition(seconds); setFollow(true); }, []);
+  // Clicking a subtitle line means "watch this sentence": land on its first frame
+  // and keep going. Writing currentTime before metadata arrives is silently
+  // dropped by the browser, so wait for it in that case.
+  const jump = useCallback((start: number) => {
+    setLoop(null);
+    seek(start);
+    const element = player.current;
+    if (!element) return;
+    if (element.readyState === 0) {
+      element.addEventListener('loadedmetadata', () => {
+        element.currentTime = start;
+        void element.play().catch(() => {});
+      }, { once: true });
+      return;
+    }
+    void element.play().catch(() => {});
+  }, [seek]);
   const current = video?.cues.filter(c => c.start <= position && c.end > position) || [];
   const sourceCaption = currentCue(video?.playback_cues?.source || [], position);
   const targetCaption = currentCue(video?.playback_cues?.target || [], position);
@@ -340,7 +357,7 @@ function App() {
         <div className="transcript-options"><div className="segmented">{(['source','target','bilingual','off'] as Mode[]).map((mode, i) => <button key={mode} className={video.progress.mode === mode ? 'chosen' : ''} onClick={() => preference({ mode })}>{[sourceLabel,targetLabel,'双语','隐藏'][i]}</button>)}</div><button className={follow ? 'following' : ''} onClick={() => { setFollow(true); setQuery(''); }}><Crosshair size={14}/>{follow ? '正在跟随' : '回到当前'}</button></div>
         <div ref={transcript} className="transcript" onWheel={() => setFollow(false)} onTouchStart={() => setFollow(false)} onPointerDown={() => setFollow(false)} onKeyDown={e => { if (['ArrowDown','ArrowUp','PageDown','PageUp'].includes(e.key)) setFollow(false); }}>
           {video.progress.mode !== 'off' && filtered.slice(page * 120, (page + 1) * 120).map(c => <div ref={c.id === currentId ? activeRow : undefined} key={c.id} className={'cue ' + (current.some(a => a.id === c.id) ? 'active ' : '') + (selected?.id === c.id ? 'cue-selected' : '')}>
-            <button className="cue-time" onClick={() => { setLoop(null); seek(c.start); }}><time>{time(c.start)}</time></button><button className="cue-content" onClick={() => setSelected(c)}>{caption(c, video.progress.mode)}</button><button aria-label={'循环 ' + time(c.start)} className="cue-loop" onClick={() => { setLoop(c); seek(c.start); void player.current?.play().catch(() => {}); }}><Repeat size={14}/></button></div>)}
+            <button className="cue-time" onClick={() => { setSelected(c); jump(c.start); }}><time>{time(c.start)}</time></button><button className="cue-content" onClick={e => { setSelected(c); if (e.detail <= 1) jump(c.start); }}>{caption(c, video.progress.mode)}</button><button aria-label={'循环 ' + time(c.start)} className="cue-loop" onClick={() => { setLoop(c); seek(c.start); void player.current?.play().catch(() => {}); }}><Repeat size={14}/></button></div>)}
           {!video.cues.length && <div className="empty"><Subtitles size={26}/><h3>准备好字幕，理解更多内容</h3><p>导入 SRT、VTT 或 ASS 文件。视频和笔记保存在本机。</p></div>}</div>
         {pageCount > 1 && <div className="transcript-pages"><button disabled={page === 0} onClick={() => { setFollow(false); setPage(p => Math.max(0, p - 1)); }}>上一页</button><span>{page + 1} / {pageCount} · {filtered.length} 条字幕</span><button disabled={page >= pageCount - 1} onClick={() => { setFollow(false); setPage(p => Math.min(pageCount - 1, p + 1)); }}>下一页</button></div>}
         {selected && <div className="selection-bar"><span>已选择 {time(selected.start)} · {selected.text.slice(0, 60)}</span><button onClick={() => seek(selected.start)}>定位原片</button><button aria-label="取消选句" onClick={() => setSelected(null)}><X size={15}/></button></div>}
