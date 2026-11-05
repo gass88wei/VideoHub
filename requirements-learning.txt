@@ -1,0 +1,5 @@
+# 「视频学习」工作台的最小依赖。
+# 只要这几个就能跑播放 + 字幕 + 笔记 + AI 问答；不需要 PyQt6 / torch / whisper。
+flask>=3,<4
+requests>=2.28,<3
+python-dotenv>=1,<2
