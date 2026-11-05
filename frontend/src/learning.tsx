@@ -18,6 +18,9 @@ function reportRuntime(detail: Record<string, string>) {
   document.dispatchEvent(new window.CustomEvent('videohub:learning-runtime', { detail }));
 }
 
+type ScanVideo = { video: string; name: string; title: string; relative: string; track_count: number; imported: boolean };
+type ScanResult = { root: string; videos: ScanVideo[]; shared_subtitles: boolean; warnings: string[] };
+
 function App() {
   const [collapsed, setCollapsed] = useState(savedLayout);
   const [fullscreen, setFullscreen] = useState(false);
@@ -26,7 +29,8 @@ function App() {
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [importMode, setImportMode] = useState('project');
-  const [needsSelection, setNeedsSelection] = useState(false);
+  const [scan, setScan] = useState<ScanResult | null>(null);
+  const [chosenVideos, setChosenVideos] = useState<string[]>([]);
   const [path, setPath] = useState('');
   const [folder, setFolder] = useState('');
   const [importChoices, setImportChoices] = useState<Array<{ path: string; title: string; source_url?: string }>>([]);
@@ -79,6 +83,14 @@ function App() {
     try { await work(); } catch (e) { setError(String((e as Error).message)); } finally { setBusy(false); }
   };
   const refresh = async () => setLibrary((await api<{ videos: Video[] }>('/videos')).videos);
+  // Scanning is read-only: it never registers anything, so the page can show a
+  // checklist before a single file is added to the library.
+  const scanFolder = async (directory: string) => {
+    const result = await api<ScanResult>('/imports/scan-directory', 'POST', { path: directory });
+    setScan(result);
+    setChosenVideos(result.videos.filter(v => !v.imported).map(v => v.name));
+    if (result.warnings.length) setError(result.warnings.join('；'));
+  };
   const open = async (id: string) => {
     const item = await api<Video>('/videos/' + id);
     const params = new URLSearchParams(location.search);
@@ -257,12 +269,13 @@ function App() {
   const importChosen = async () => {
     let item: Video;
     if (importMode === 'project') {
-      const result = await api<{ video?: Video; warnings?: string[]; needs_selection?: boolean; videos?: typeof importChoices }>(
-        '/imports/project', 'POST', { directory: folder, video_path: needsSelection ? path : '' });
-      if (result.needs_selection) { setImportChoices(result.videos || []); setNeedsSelection(true); setPath(''); return; }
-      if (!result.video) throw new Error('工程导入失败');
-      item = result.video;
+      const result = await api<{ videos?: Array<{ id: string; title: string }>; warnings?: string[] }>(
+        '/imports/project', 'POST', { directory: folder, videos: chosenVideos.length ? chosenVideos : undefined });
+      const added = result.videos || [];
+      if (!added.length) throw new Error('工程导入失败');
+      item = await api<Video>('/videos/' + added[0].id);
       if (result.warnings?.length) setError(result.warnings.join('；'));
+      if (added.length > 1) setShortcutNotice(`${added.length} 个视频已加入学习库`);
     } else {
       const chosen = importChoices.find(c => c.path === path);
       item = await api<Video>('/videos', 'POST', { path, source_url: chosen?.source_url });
@@ -367,17 +380,21 @@ function App() {
         resizeHandle={<ResizeHandle label="调整学习助手宽度" controls="learning-assistant" className="assistant-width-resizer" axis="x" direction={-1} value={sizes.assistant} min={260} max={sizes.assistantMax} change={value => sizes.change('assistant', value)} reset={() => sizes.reset('assistant')}/>}
         refresh={async () => { await save(); const updated = await api<Video>('/videos/' + video.id); setVideo(updated); await refresh(); }} report={setError}/>}
     </main>
-    {importing && <div className="modal-backdrop"><form className="modal import-modal" onSubmit={e => { e.preventDefault(); void execute(importChosen); }}><div className="modal-title"><h2>导入学习资料</h2><button type="button" aria-label="关闭导入" onClick={() => setImporting(false)}><X size={20}/></button></div><div className="segmented import-mode"><button type="button" className={importMode === 'project' ? 'chosen' : ''} onClick={() => { setImportMode('project'); setNeedsSelection(false); }}>视频工程（目录）</button><button type="button" className={importMode === 'file' ? 'chosen' : ''} onClick={() => { setImportMode('file'); setNeedsSelection(false); }}>单个视频 / 下载记录</button></div>
+    {importing && <div className="modal-backdrop"><form className="modal import-modal" onSubmit={e => { e.preventDefault(); void execute(importChosen); }}><div className="modal-title"><h2>导入学习资料</h2><button type="button" aria-label="关闭导入" onClick={() => setImporting(false)}><X size={20}/></button></div><div className="segmented import-mode"><button type="button" className={importMode === 'project' ? 'chosen' : ''} onClick={() => { setImportMode('project'); setScan(null); }}>视频工程（目录）</button><button type="button" className={importMode === 'file' ? 'chosen' : ''} onClick={() => { setImportMode('file'); setScan(null); }}>单个视频 / 下载记录</button></div>
       {error && <p className="warning" role="alert">{error}</p>}
-      {importMode === 'project' ? <><p>把一个视频和几份字幕放在同一个文件夹，或把字幕放进 subtitles 子文件夹。导入时自动识别语言并加载全部字幕。</p><label>工程目录<div className="path-picker"><input aria-label="工程目录" autoFocus value={folder} placeholder="F:\学习\一节课程" required onChange={e => { setFolder(e.target.value); setNeedsSelection(false); }}/><button type="button" disabled={busy} onClick={() => void execute(async () => {
+      {importMode === 'project' ? <><p>选一个放视频的文件夹，里面有多少个视频就列多少个。每个视频自动配同名字幕，字幕也可以放在 subtitles 子文件夹。</p><label>工程目录<div className="path-picker"><input aria-label="工程目录" autoFocus value={folder} placeholder="/home/你/学习/课程目录" required onChange={e => { setFolder(e.target.value); setScan(null); }}/><button type="button" disabled={busy} onClick={() => void execute(async () => {
         const picked = await api<{ path: string }>('/pick-directory', 'POST', { path: folder });
-        if (picked.path) { setFolder(picked.path); setNeedsSelection(false); }
-      })}><FolderOpen size={14}/>选择目录</button></div></label>{needsSelection && <p className="warning">目录中有多个视频，请先选择本次学习的视频；只关联同名字幕。</p>}</> : <><p>本地视频直接引用；下载记录会自动整理为工程并加载对应字幕，保留原文件。</p><label>视频路径<div className="path-picker"><input aria-label="视频路径" autoFocus value={path} placeholder="F:\videos\课程.mp4" required onChange={e => setPath(e.target.value)} /><button type="button" disabled={busy} onClick={() => void execute(async () => {
+        if (picked.path) { setFolder(picked.path); await scanFolder(picked.path); }
+      })}><FolderOpen size={14}/>选择目录</button></div></label>
+        {folder && !scan && <button type="button" disabled={busy} onClick={() => void execute(() => scanFolder(folder))}>扫描这个目录</button>}
+        {scan && <div className="scan-result"><div className="scan-head"><span>{scan.videos.length} 个视频{scan.shared_subtitles ? '（按文件名配对字幕）' : '（目录里只有这一个视频）'}</span><button type="button" onClick={() => setChosenVideos(chosenVideos.length === scan.videos.length ? [] : scan.videos.map(v => v.name))}>{chosenVideos.length === scan.videos.length ? '全不选' : '全选'}</button></div>
+          <div className="scan-list">{scan.videos.map(v => <label key={v.name} className={'scan-item' + (chosenVideos.includes(v.name) ? ' chosen' : '')}><input type="checkbox" checked={chosenVideos.includes(v.name)} onChange={e => setChosenVideos(e.target.checked ? [...chosenVideos, v.name] : chosenVideos.filter(n => n !== v.name))}/><span className="scan-title">{v.title}</span><small>{v.track_count ? v.track_count + ' 份字幕' : '无字幕'}{v.imported && <i className="scan-tag">已在库中</i>}</small></label>)}</div></div>}
+      </> : <><p>本地视频直接引用；下载记录会自动整理为工程并加载对应字幕，保留原文件。</p><label>视频路径<div className="path-picker"><input aria-label="视频路径" autoFocus value={path} placeholder="F:\videos\课程.mp4" required onChange={e => setPath(e.target.value)} /><button type="button" disabled={busy} onClick={() => void execute(async () => {
         const picked = await api<{ path: string }>('/pick-directory', 'POST', { path: path ? path.replace(/\/[^/]*$/, '') : folder });
         if (picked.path) setFolder(picked.path);
       })}><FolderOpen size={14}/>选择目录</button></div></label><details><summary>从视频目录或剧集目录选择</summary><div className="folder-scan"><input aria-label="视频目录" value={folder} placeholder="目录完整路径" onChange={e => setFolder(e.target.value)}/><button type="button" disabled={busy || !folder} onClick={() => void execute(async () => setImportChoices((await api<{ videos: typeof importChoices }>('/imports/directory', 'POST', { path: folder })).videos))}>扫描目录</button></div></details></>}
-      {(importMode === 'file' || needsSelection) && !!importChoices.length && <div className="import-choices">{importChoices.map(choice => <button type="button" className={path === choice.path ? 'chosen' : ''} key={choice.path} title={choice.path} onClick={() => setPath(choice.path)}><Play size={13}/>{choice.title}</button>)}</div>}
-      <button className="primary" disabled={busy || (needsSelection && !path)}>{busy ? '正在读取…' : importMode === 'project' ? '打开工程并自动加载字幕' : '加入学习资料'}</button></form></div>}
+      {importMode === 'file' && !!importChoices.length && <div className="import-choices">{importChoices.map(choice => <button type="button" className={path === choice.path ? 'chosen' : ''} key={choice.path} title={choice.path} onClick={() => setPath(choice.path)}><Play size={13}/>{choice.title}</button>)}</div>}
+      <button className="primary" disabled={busy || (importMode === 'project' ? !chosenVideos.length : !path)}>{busy ? '正在读取…' : importMode === 'project' ? (chosenVideos.length > 1 ? `导入选中的 ${chosenVideos.length} 个视频` : '导入选中的视频') : '加入学习资料'}</button></form></div>}
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

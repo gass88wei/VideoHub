@@ -20,7 +20,7 @@ try:
     from .learning.search import search_web
     from .learning.imports import recent_downloads, directory_assets
     from .learning.preparation import start_preview, start_transcription
-    from .learning.project import import_project
+    from .learning.project import import_project, scan
     from .learning.downloads import import_download
     from .learning.mindmap import latest_key, as_markdown
 except ImportError:
@@ -32,7 +32,7 @@ except ImportError:
     from learning.search import search_web
     from learning.imports import recent_downloads, directory_assets
     from learning.preparation import start_preview, start_transcription
-    from learning.project import import_project
+    from learning.project import import_project, scan
     from learning.downloads import import_download
     from learning.mindmap import latest_key, as_markdown
 
@@ -150,10 +150,18 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
 
         return jsonify(path=choose(str(body().get("path", ""))))
 
+    @app.post("/api/learning/imports/scan-directory")
+    def scan_project():
+        """Read-only preview: every video in a directory plus its subtitles."""
+        return jsonify(scan(str(body().get("path", ""))))
+
     @app.post("/api/learning/imports/project")
     def project_import():
         data = body()
-        return jsonify(import_project(service, str(data.get("directory", "")), str(data.get("video_path", ""))))
+        names = data.get("videos")
+        if names is not None and not isinstance(names, list):
+            raise ValueError("视频清单格式无效")
+        return jsonify(import_project(service, str(data.get("directory", "")), names))
 
     @app.post("/api/learning/videos")
     def register():
