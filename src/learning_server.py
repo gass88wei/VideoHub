@@ -15,7 +15,7 @@ try:
     from .learning.service import LearningService
     from .learning import media
     from .learning.assistant import Assistant
-    from .learning.providers import capabilities
+    from .learning import providers
     from .learning.notes import NoteConflict, save_note, markdown
     from .learning.search import search_web
     from .learning.imports import recent_downloads, directory_assets
@@ -27,7 +27,7 @@ except ImportError:
     from learning.service import LearningService
     from learning import media
     from learning.assistant import Assistant
-    from learning.providers import capabilities
+    from learning import providers
     from learning.notes import NoteConflict, save_note, markdown
     from learning.search import search_web
     from learning.imports import recent_downloads, directory_assets
@@ -49,6 +49,7 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     app.config["LEARNING_DEV_ORIGIN"] = dev_origin
     service = LearningService(Path(data_root))
     app.config["LEARNING_SERVICE"] = service
+    providers.bind(service.store)
     assistant = Assistant(service)
     assistant.search = search_web
     app.config["LEARNING_ASSISTANT"] = assistant
@@ -97,7 +98,26 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
 
     @app.get("/api/learning/session")
     def session():
-        return jsonify(token=token, providers=capabilities(), features={"mindmap": True})
+        return jsonify(token=token, providers=providers.capabilities(), features={"mindmap": True})
+
+    @app.get("/api/learning/providers")
+    def list_providers():
+        return jsonify(providers=providers.capabilities())
+
+    @app.post("/api/learning/providers/<name>")
+    def save_provider(name):
+        # Keys live in the local database only: no secret ever travels back out.
+        providers.save(name, body())
+        return jsonify(provider=providers.describe(name))
+
+    @app.post("/api/learning/providers/<name>/test")
+    def test_provider(name):
+        if name not in providers.DEFAULTS:
+            raise ValueError("支持 DeepSeek 或 Kimi")
+        data = body()
+        provider = providers.Provider(name, str(data.get("model", "")), str(data.get("base_url", "")), str(data.get("api_key", "")))
+        provider.require_key()
+        return jsonify(provider.probe())
 
     def body():
         value = request.get_json(silent=True)

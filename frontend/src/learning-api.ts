@@ -25,7 +25,10 @@ export type MindmapNode = { id: string; label: string; summary: string; start: n
 export type Mindmap = { organization: 'logical' | 'topics'; explanation: string; basis: string; root: MindmapNode;
   created: string; subtitle_version: string; provider: string; model: string; coverage: { parts: number; cues: number } };
 export type Study = { messages: Message[]; notes: Note[]; outline: Chapter[]; mindmap?: Mindmap | null; active_job: Job | null };
-export type Providers = Record<string, { configured: boolean; model: string; input_budget: number; error?: string }>;
+export type ProviderInfo = { label: string; configured: boolean; model: string; base_url: string; default_base_url?: string;
+  input_budget: number; key_hint: string; source: 'settings' | 'env' | 'none'; official?: boolean; error?: string };
+export type Providers = Record<string, ProviderInfo>;
+export type ProviderTest = { ok: boolean; model: string; base_url: string };
 let token = '';
 export const setToken = (value: string) => { token = value; };
 export async function api<T>(path: string, method = 'GET', data?: unknown): Promise<T> {

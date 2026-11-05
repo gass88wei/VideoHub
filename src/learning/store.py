@@ -50,6 +50,8 @@ class Store:
                     cache_key TEXT PRIMARY KEY, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY, data TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY, data TEXT NOT NULL, updated TEXT NOT NULL);
                 PRAGMA user_version=1;
             """)
 
@@ -138,6 +140,22 @@ class Store:
         with self.connect() as db:
             if not db.execute("DELETE FROM notes WHERE id=? AND video_id=?", (note_id, video_id)).rowcount:
                 raise KeyError("笔记不存在")
+
+    def setting(self, key: str, default=None):
+        with self.connect() as db:
+            row = db.execute("SELECT data FROM settings WHERE key=?", (key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
+    def save_setting(self, key: str, value):
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO settings VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data, updated=excluded.updated",
+                (key, encode(value), now()),
+            )
+
+    def delete_setting(self, key: str):
+        with self.connect() as db:
+            db.execute("DELETE FROM settings WHERE key=?", (key,))
 
     def cache(self, key: str):
         with self.connect() as db:

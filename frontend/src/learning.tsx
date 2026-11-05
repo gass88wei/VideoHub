@@ -346,6 +346,7 @@ function App() {
         {selected && <div className="selection-bar"><span>已选择 {time(selected.start)} · {selected.text.slice(0, 60)}</span><button onClick={() => seek(selected.start)}>定位原片</button><button aria-label="取消选句" onClick={() => setSelected(null)}><X size={15}/></button></div>}
       </> : <div className="welcome"><div className="welcome-icon"><BookOpen size={42}/></div><div className="eyebrow">看懂每一段，留下每一个收获</div><h1>把视频变成你的学习资料</h1><p>双语字幕、随时提问、时间戳笔记。<br/>从一个已经下载好的视频开始。</p><button className="primary" onClick={() => setImporting(true)}><FolderPlus size={18}/>导入第一个视频</button></div>}</section>
       {video && <LearningPanel key={video.id} video={video} position={position} selected={selected} providers={providers} mindmapAvailable={mindmapAvailable} translationRequest={translationRequest.videoId === video.id ? translationRequest.count : 0} seek={seek} collapsed={collapsed.assistant}
+        reloadProviders={async () => { const next = await api<{ providers: Providers }>('/providers'); setProviders(next.providers); }}
         resizeHandle={<ResizeHandle label="调整学习助手宽度" controls="learning-assistant" className="assistant-width-resizer" axis="x" direction={-1} value={sizes.assistant} min={260} max={sizes.assistantMax} change={value => sizes.change('assistant', value)} reset={() => sizes.reset('assistant')}/>}
         refresh={async () => { await save(); const updated = await api<Video>('/videos/' + video.id); setVideo(updated); await refresh(); }} report={setError}/>}
     </main>

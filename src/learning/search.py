@@ -16,6 +16,8 @@ def search_web(name: str, query: str, cancelled) -> list[dict]:
         raise ValueError("搜索词须为 1–128 字")
     provider = Provider(name)
     provider.require_key()
+    if not provider.official:
+        raise ValueError("联网搜索只支持 DeepSeek / Kimi 官方接口，第三方兼容地址请关闭「联网补充」")
     if cancelled.is_set():
         raise InterruptedError()
     base = provider.base if provider.base.endswith("/v1") else provider.base + "/v1"

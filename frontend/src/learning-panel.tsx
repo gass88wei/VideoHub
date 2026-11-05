@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowUp, BookmarkPlus, Check, ChevronRight, Download, Globe, ListTree, Network, MessageCircle, NotebookPen, Settings2, Square, Sparkles, Pencil, Trash2 } from 'lucide-react';
-import { api, sendChat, resolveSearchQuery, activeJob, time, Video, Cue, Providers, Study, Job, Message, Note, Citation, WebSource } from './learning-api';
+import { ArrowUp, BookmarkPlus, Check, ChevronRight, Download, Globe, ListTree, Network, MessageCircle, NotebookPen, Settings2, Square, Sparkles, Pencil, Trash2, PlugZap } from 'lucide-react';
+import { api, sendChat, resolveSearchQuery, activeJob, time, Video, Cue, Providers, ProviderInfo, Study, Job, Message, Note, Citation, WebSource } from './learning-api';
 import { LearningMarkdown } from './learning-markdown';
 import { LearningMindmap } from './learning-mindmap';
 
 type Props = { video: Video; position: number; selected: Cue | null; providers: Providers; collapsed: boolean; resizeHandle: React.ReactNode;
   mindmapAvailable?: boolean;
   translationRequest?: number;
+  reloadProviders: () => Promise<void>;
   seek: (value: number) => void; refresh: () => Promise<void>; report: (message: string) => void };
 
-export function LearningPanel({ video, position, selected, providers, seek, refresh, report, collapsed, resizeHandle, mindmapAvailable = true, translationRequest = 0 }: Props) {
+export function LearningPanel({ video, position, selected, providers, seek, refresh, report, collapsed, resizeHandle, mindmapAvailable = true, translationRequest = 0, reloadProviders }: Props) {
   const [tab, setTab] = useState('chat');
   const [translationOpen, setTranslationOpen] = useState(false);
   useEffect(() => { if (translationRequest) setTranslationOpen(true); }, [translationRequest]);
@@ -31,10 +32,42 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
   const [editing, setEditing] = useState<Note | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
   const [whisperModel, setWhisperModel] = useState('small');
+  const [draft, setDraft] = useState({ base_url: '', model: '', api_key: '' });
+  const [savingSetup, setSavingSetup] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [setupNotice, setSetupNotice] = useState<{ kind: 'ok' | 'bad'; text: string } | null>(null);
   const tail = useRef<HTMLDivElement>(null);
   const currentId = useRef(video.id); currentId.current = video.id;
   const model = models[provider] || providers[provider]?.model || '';
+  const info: ProviderInfo | undefined = providers[provider];
   const working = activeJob(job) || starting;
+  // Fill the form from the saved configuration whenever the panel opens or a save lands.
+  useEffect(() => {
+    if (!settings) return;
+    setDraft({ base_url: info?.base_url || '', model: info?.model || '', api_key: '' });
+    setSetupNotice(null);
+  }, [settings, provider, info?.base_url, info?.model]);
+  const saveSetup = async () => {
+    setSavingSetup(true); setSetupNotice(null);
+    try {
+      await api('/providers/' + provider, 'POST', { base_url: draft.base_url, model: draft.model, api_key: draft.api_key });
+      // A saved model name replaces the local override so the two cannot disagree.
+      const next = { ...models }; delete next[provider]; setModels(next);
+      localStorage.setItem('videohub.learning.models', JSON.stringify(next));
+      await reloadProviders();
+      setSetupNotice({ kind: 'ok', text: '已保存，立即生效，无需重启服务。' });
+    } catch (e) { setSetupNotice({ kind: 'bad', text: (e as Error).message }); }
+    finally { setSavingSetup(false); }
+  };
+  const testSetup = async () => {
+    setTesting(true); setSetupNotice(null);
+    try {
+      const result = await api<{ ok: boolean; model: string }>('/providers/' + provider + '/test', 'POST',
+        { base_url: draft.base_url, model: draft.model, api_key: draft.api_key });
+      setSetupNotice({ kind: 'ok', text: '连接成功，接口返回模型：' + result.model });
+    } catch (e) { setSetupNotice({ kind: 'bad', text: (e as Error).message }); }
+    finally { setTesting(false); }
+  };
   const reload = async () => {
     const id = video.id;
     const value = await api<Study>('/videos/' + id + '/study');
@@ -117,8 +150,16 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
       const TabIcon = Icon as typeof MessageCircle; return <button key={String(id)} className={tab === id ? 'current-tab' : ''} onClick={() => setTab(String(id))}><TabIcon size={16}/>{String(label)}</button>;
     })}</div>
     <div className="model-bar"><span className={'status-dot ' + (providers[provider]?.configured ? 'ready' : '')}/><select aria-label="AI 服务" value={provider} onChange={e => { setProvider(e.target.value); localStorage.setItem('videohub.learning.provider', e.target.value); }}><option value="deepseek">DeepSeek</option><option value="kimi">Kimi</option></select><button aria-label="模型设置" onClick={() => setSettings(!settings)}><Settings2 size={15}/></button></div>
-    {settings && <div className="model-settings"><label>模型名称<input aria-label="模型名称" value={model} onChange={e => { const next = { ...models, [provider]: e.target.value }; setModels(next); localStorage.setItem('videohub.learning.models', JSON.stringify(next)); }}/></label><p>密钥从本机 .env 读取。DeepSeek：DEEPSEEK_API_KEY；Kimi：MOONSHOT_API_KEY。修改后重启服务。</p><p>启用 AI 会向所选服务发送问题和所需字幕；启用联网只向搜索服务发送你填写的检索词。</p></div>}
-    {!providers[provider]?.configured && <div className="configuration-hint">{providers[provider]?.error || (provider === 'deepseek' ? 'DeepSeek' : 'Kimi') + ' 尚未配置密钥'}。播放、字幕和手动笔记仍可使用。</div>}
+    {settings && <div className="model-settings">
+      <label>API 地址<input aria-label="API 地址" inputMode="url" spellCheck={false} placeholder={info?.default_base_url || 'https://api.deepseek.com'} value={draft.base_url} onChange={e => setDraft({ ...draft, base_url: e.target.value })}/></label>
+      <label>模型名称<input aria-label="模型名称" spellCheck={false} placeholder={info?.model || 'deepseek-chat'} value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })}/></label>
+      <label>API 密钥<input aria-label="API 密钥" type="password" autoComplete="off" spellCheck={false} placeholder={info?.key_hint ? '已保存 ' + info.key_hint + '，留空则不修改' : '粘贴密钥，只保存在本机'} value={draft.api_key} onChange={e => setDraft({ ...draft, api_key: e.target.value })}/></label>
+      <div className="setup-actions"><button className="primary" disabled={savingSetup || testing} onClick={() => void saveSetup()}>{savingSetup ? '保存中…' : '保存'}</button><button disabled={savingSetup || testing || !info?.configured && !draft.api_key} onClick={() => void testSetup()}><PlugZap size={12}/>{testing ? '测试中…' : '测试连接'}</button></div>
+      {setupNotice && <p className={setupNotice.kind === 'ok' ? 'setup-ok' : 'setup-bad'} role="status">{setupNotice.text}</p>}
+      <p>{info?.source === 'env' ? '当前密钥来自本机 .env；在这里保存后会优先生效。' : info?.source === 'settings' ? '密钥保存在本机学习数据库，不会回传到页面。' : '填写任意 OpenAI 兼容服务都能用：地址、模型名、密钥三项即可。'}</p>
+      <p>启用 AI 会向所选服务发送问题和所需字幕；启用联网只向搜索服务发送你填写的检索词。</p>
+    </div>}
+    {!info?.configured && <div className="configuration-hint">{info?.error || (info?.label || '该服务') + ' 尚未配置密钥'}{settings ? '。' : '，点右侧齿轮填写地址、模型和密钥即可。'}播放、字幕和手动笔记仍可使用。</div>}
     {translationOpen && <section className="translation-setup" aria-label="翻译已有字幕"><div className="panel-section-head"><h3>翻译已有字幕</h3><button onClick={() => setTranslationOpen(false)}>收起</button></div>
       <p>原文版本：<strong>{video.available_tracks?.find(t => t.key === 'source')?.name || video.tracks.source?.original_path || '当前原文字幕'}</strong></p>
       <p>将当前完整原文发送给上方选择的 {provider === 'kimi' ? 'Kimi' : 'DeepSeek'}（{model || '默认模型'}），生成独立中文字幕。保留时间轴和旧版本，无需重新下载或转写。</p>
